@@ -18,6 +18,13 @@ parking_model_mapping<- function(instance_name, project_list_instance, project_l
     return(df)
   }
   
+  expand_shape <- function(df, col_name, pct_increase) {
+    df_diff <- df[,col_name] - mean(df[,col_name])
+    df_diff_expanded <- df_diff * (1 + pct_increase)
+    df[,col_name] <- mean(df[,col_name]) + df_diff_expanded
+    return(df)
+  }
+  
   # Load packages ---------------------------------------------------------------------------------------------------------------
   require(openxlsx)
   require(ggmap)
@@ -134,7 +141,7 @@ parking_model_mapping<- function(instance_name, project_list_instance, project_l
       temp$NAME <- temp_add_bldg$BLDG_NAME[i]
     }
     
-    new_id <- as.numeric(max(bldg_shape_data$OBJECTID)) + 1
+    new_id <- as.numeric(max(bldg_shape_data$OBJECTID)) + 2
     
     if (checkdf$id[1] == temp$id[1]) {
       if (debug_newshapes) {print("adjusting id")}
@@ -197,7 +204,7 @@ parking_model_mapping<- function(instance_name, project_list_instance, project_l
       temp$LOT <- temp_add_pkng$'P&TS.Lot.Name'[i]
     }
     
-    new_id <- as.numeric(max(pkng_shape_data$OBJECTID)) + 1
+    new_id <- as.numeric(max(as.numeric(pkng_shape_data$OBJECTID))) + 2
     
     if (checkdf$id[1] == temp$id[1]) {
       if (debug_newshapes) {print("adjusting id")}
@@ -235,38 +242,71 @@ parking_model_mapping<- function(instance_name, project_list_instance, project_l
   temp_logical[is.na(temp_logical)] <- FALSE
   project_list_uptonow <- project_list[project_list$Start.Date == instance_name | temp_logical,]
   
-  color_active <- "Blue"
-  color_inactive <- "Black"
-  bldg_to_circle = data.frame(NAME = unique(bldg_shape_data$NAME)[unique(bldg_shape_data$NAME) %in% na.omit(temp_bldg_coords$BLDG_NAME)], lat = numeric(length(unique(temp_bldg_coords$BLDG_NAME))), lon = numeric(length(unique(temp_bldg_coords$BLDG_NAME))), radius = numeric(length(unique(temp_bldg_coords$BLDG_NAME))), color = character(length(unique(temp_bldg_coords$BLDG_NAME))))
-
-  i=3
-  for (i in 1:nrow(bldg_to_circle)) {
-    temp <- na.omit(bldg_shape_data[bldg_shape_data$NAME == bldg_to_circle$NAME[i],])
-    bldg_to_circle$lat[i] <- mean(temp$lat)
-    bldg_to_circle$lon[i] <- mean(temp$lon)
-    bldg_to_circle$radius[i] <- max(max(temp$lat) - min(temp$lat), max(temp$lon) - min(temp$lon)) / 2 * 5
-    if (temp_bldg_coords$No.[i] %in% project_list_uptonow$No.) {
-      bldg_to_circle$color[i] <- color_active
-    } else {
-      bldg_to_circle$color[i] <- color_inactive
+  # color_active <- "Blue"
+  # color_inactive <- "Black"
+  # bldg_to_circle = data.frame(NAME = unique(bldg_shape_data$NAME)[unique(bldg_shape_data$NAME) %in% na.omit(temp_bldg_coords$BLDG_NAME)], lat = numeric(length(unique(temp_bldg_coords$BLDG_NAME))), lon = numeric(length(unique(temp_bldg_coords$BLDG_NAME))), radius = numeric(length(unique(temp_bldg_coords$BLDG_NAME))), color = character(length(unique(temp_bldg_coords$BLDG_NAME))))
+  # 
+  
+  # create highlight dfs for changed bldgs/pkngs
+  pct_increase <- 0.30
+  list2expand <- c("long","lat","Lat","Lon","Latitude","Longitude")
+  
+  # df = temp
+  # col_name = "long"
+  # pct_increase <- 0.30
+ 
+  highlight_df_bldg <- bldg_shape_data[0,]
+  changed_bldgs <- data.frame(NAME = na.omit(project_list_uptonow$BLDG_NAME))
+  changed_bldgs <- clean_text(changed_bldgs, "NAME")
+  
+  for (i in changed_bldgs$NAME) {
+    temp <- bldg_shape_data[bldg_shape_data$NAME == i & !is.na(bldg_shape_data$NAME),]
+    for (j in list2expand) {
+      temp <- expand_shape(temp, j , pct_increase)
     }
+    highlight_df_bldg <- rbind(highlight_df_bldg, temp)
   }
 
-  pkng_to_circle = data.frame(LOT = unique(pkng_shape_data$LOT)[unique(pkng_shape_data$LOT) %in% na.omit(temp_pkng_coords$`P&TS.Lot.Name`)], lat = numeric(length(unique(temp_pkng_coords$`P&TS.Lot.Name`))), lon = numeric(length(unique(temp_pkng_coords$`P&TS.Lot.Name`))), radius = numeric(length(unique(temp_pkng_coords$`P&TS.Lot.Name`))), color = character(length(unique(temp_pkng_coords$`P&TS.Lot.Name`))))
+
+  highlight_df_pkng <- pkng_shape_data[0,]
+  changed_pkngs <- data.frame(LOT = na.omit(project_list_uptonow$`P&TS.Lot.Name`))
+  changed_pkngs <- clean_text(changed_pkngs, "LOT")
   
-  i=2
-  for (i in 1:nrow(pkng_to_circle)) {
-    temp <- pkng_shape_data[pkng_shape_data$LOT == pkng_to_circle$LOT[i],]
-    pkng_to_circle$lat[i] <- mean(temp$lat)
-    pkng_to_circle$lon[i] <- mean(temp$lon)
-    pkng_to_circle$radius[i] <- max(max(temp$lat) - min(temp$lat), max(temp$lon) - min(temp$lon)) / 2 * 5
-    if (temp_pkng_coords$No.[i] %in% project_list_uptonow$No.) {
-      pkng_to_circle$color[i] <- color_active
-    } else {
-      pkng_to_circle$color[i] <- color_inactive
+  for (i in changed_pkngs$LOT) {
+    temp <- pkng_shape_data[pkng_shape_data$LOT == i & !is.na(pkng_shape_data$LOT),]
+    for (j in list2expand) {
+      temp <- expand_shape(temp, j , pct_increase)
     }
+    highlight_df_pkng <- rbind(highlight_df_pkng, temp)
   }
   
+  # i=3
+  # for (i in 1:nrow(bldg_to_circle)) {
+  #   temp <- na.omit(bldg_shape_data[bldg_shape_data$NAME == bldg_to_circle$NAME[i],])
+  #   bldg_to_circle$lat[i] <- mean(temp$lat)
+  #   bldg_to_circle$lon[i] <- mean(temp$lon)
+  #   bldg_to_circle$radius[i] <- max(max(temp$lat) - min(temp$lat), max(temp$lon) - min(temp$lon)) / 2 * 5
+  #   if (temp_bldg_coords$No.[i] %in% project_list_uptonow$No.) {
+  #     bldg_to_circle$color[i] <- color_active
+  #   } else {
+  #     bldg_to_circle$color[i] <- color_inactive
+  #   }
+  # }
+  # 
+  # pkng_to_circle = data.frame(LOT = unique(pkng_shape_data$LOT)[unique(pkng_shape_data$LOT) %in% na.omit(temp_pkng_coords$`P&TS.Lot.Name`)], lat = numeric(length(unique(temp_pkng_coords$`P&TS.Lot.Name`))), lon = numeric(length(unique(temp_pkng_coords$`P&TS.Lot.Name`))), radius = numeric(length(unique(temp_pkng_coords$`P&TS.Lot.Name`))), color = character(length(unique(temp_pkng_coords$`P&TS.Lot.Name`))))
+  # 
+  # i=2
+  # for (i in 1:nrow(pkng_to_circle)) {
+  #   temp <- pkng_shape_data[pkng_shape_data$LOT == pkng_to_circle$LOT[i],]
+  #   pkng_to_circle$lat[i] <- mean(temp$lat)
+  #   pkng_to_circle$lon[i] <- mean(temp$lon)
+  #   pkng_to_circle$radius[i] <- max(max(temp$lat) - min(temp$lat), max(temp$lon) - min(temp$lon)) / 2 * 5
+  #   if (temp_pkng_coords$No.[i] %in% project_list_uptonow$No.) {
+  #     pkng_to_circle$color[i] <- color_active
+  #   } else {
+  #     pkng_to_circle$color[i] <- color_inactive
+  #   }
+  # }
   
   # run map functions -----------------------------------------------------------------------------------------------------------
   map_parking_conditions(path2shape_bldg = path2shape_bldg, path2shape_pkng = path2shape_pkng, path2demand_bldg = path2demand_bldg,
@@ -276,8 +316,10 @@ parking_model_mapping<- function(instance_name, project_list_instance, project_l
                          bldg_color_palette = bldg_color_palette, plot_pkng = plot_pkng, plot_bldg = plot_bldg, plot_both = plot_both, 
                          both_color_palette = both_color_palette, instance_name = instance_name, basemap = basemap,
                          shape_bldg = shape_bldg, shape_pkng = shape_pkng, bldg_shape_data = bldg_shape_data, pkng_shape_data = pkng_shape_data,
-                         bldg_to_circle = bldg_to_circle, pkng_to_circle = pkng_to_circle)
+                         # bldg_to_circle = bldg_to_circle, pkng_to_circle = pkng_to_circle, 
+                         highlight_df_bldg = highlight_df_bldg, highlight_df_pkng = highlight_df_pkng)
   
+  unique(pkng_shape_data$OBJECTID)
   path2demand_bldg <- "S:\\Groups\\Transportation\\Planning\\Parking estimates\\PArking model\\Data Generated\\bldg4mapping_filtered.csv"
   path2demand_pkng <- "S:\\Groups\\Transportation\\Planning\\Parking estimates\\PArking model\\Data Generated\\pkng4mapping_filtered.csv"
   pkng_demand_info <- bldgXpkng4mapping[grep("pkng_filtered",bldgXpkng4mapping$group),c("field_name","text_title")]
@@ -294,7 +336,8 @@ parking_model_mapping<- function(instance_name, project_list_instance, project_l
                          bldg_color_palette = bldg_color_palette, plot_pkng = plot_pkng, plot_bldg = plot_bldg, plot_both = plot_both, 
                          both_color_palette = both_color_palette, instance_name = instance_name, basemap = basemap,
                          shape_bldg = shape_bldg, shape_pkng = shape_pkng, bldg_shape_data = bldg_shape_data, pkng_shape_data = pkng_shape_data,
-                         bldg_to_circle = bldg_to_circle, pkng_to_circle = pkng_to_circle)
+                         # bldg_to_circle = bldg_to_circle, pkng_to_circle = pkng_to_circle, 
+                         highlight_df_bldg = highlight_df_bldg, highlight_df_pkng = highlight_df_pkng)
   
   # Clear workspace -------------------------------------------------------------------------------------------------------------
   rm(list = ls()) 
